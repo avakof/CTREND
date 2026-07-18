@@ -1,0 +1,35 @@
+[project]
+name = "ctrend"
+version = "0.1.0"
+description = "Replication + OOS extension of Fieberg et al., A Trend Factor for the Cross-Section of Cryptocurrency Returns (JFQA 2025)"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "scikit-learn>=1.4",
+    "statsmodels>=0.14",
+    "pyarrow>=15",
+    "duckdb>=0.10",
+    "pytest>=8.0",
+    "hypothesis>=6.98",
+    "pyyaml>=6.0",
+    "requests>=2.31",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ctrend"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: long-running tests (deselect with '-m \"not slow\"')",
+    "network: requires network access",
+]
+filterwarnings = ["ignore::UserWarning", "ignore::FutureWarning"]

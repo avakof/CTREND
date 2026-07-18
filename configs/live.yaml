@@ -1,0 +1,82 @@
+# Implementable configuration — out-of-sample extension + reality layer (SPEC §6, M6).
+# Differences from replication.yaml are the point of the experiment; each is a
+# deliberate realism adjustment, not a spec deviation.
+mode: live
+
+sample:
+  start: 2015-04-01
+  end: null                          # null => today
+  frequency: weekly
+
+universe:
+  min_market_cap_usd: 1_000_000
+  drop_mcap_above_btc: true
+  require: [close, dollar_volume, market_cap]
+  include_delisted: true
+  delisting_policy: last_price       # A4
+
+returns:
+  truncate_lower_pct: 0.005
+  truncate_upper_pct: 0.995
+  truncation_mode: expanding         # A5 — no full-sample look-ahead in live mode
+  truncation_scope: pooled           # pooled over all coin-weeks (see DECISIONS)
+  risk_free: 0.0
+
+indicators:
+  macd_denominator: fast             # A1
+  chaikin_window: 20                 # A2
+  rank_map_range: [-0.5, 0.5]
+
+signal:
+  estimation_window_weeks: 52
+  wls_weights: market_cap
+  elasticnet:
+    l1_ratio: 0.5
+    lambda_grid: {n: 25, log_low: -4, log_high: 0}
+    selection: aicc                  # I2
+    max_iter: 20000
+  forecast_selection: theta_positive # keep indicators with theta_j > 0
+  combine: equal_weight
+  # --- §4.3 residual ambiguities, resolved in DECISIONS.md (I2) ---
+  training_window: expanding         # pool combining targets [53, t]
+  min_pool_weeks: 1                  # => first ENet-combined CTREND is week 54
+  wls_weight_date: signal            # mcap at t-1, the signal date (conservative, I1)
+  wls_weights_normalize: true        # w = mcap / mcap.sum(); beta scale-free, alpha is not
+  demean_returns: equal_weight       # step 4 demeans y equal-weighted (literal reading)
+  forecast_alignment: t_plus_1       # forecast for t+1 uses smoothed pairs [t+1-M, t] and z_t
+  var_floor: 1.0e-12                 # degenerate cross-sectional variance guard
+  min_cross_section: 20              # minimum admissible coins per weekly WLS
+  nan_policy: inner_join             # coin must be present at both t-1 and t
+  empty_selection: nan               # no theta_j > 0 => CTREND is NaN, week dropped
+
+portfolio:
+  n_quantiles: 5
+  weighting: value_weighted
+  holding_period_weeks: 1
+  diagnostic_holding_periods: [2, 3, 4, 5, 6]
+  rebalance_weekday: sunday          # A3
+  implementation_lag_days: 1         # ON — trade at t+1, not the signal close
+  long_only: true                    # ON — short leg largely untradable (see §10)
+  liquidity_screen: top_half_dollar_volume
+
+costs:
+  schemes_bps:
+    - [30, 40]
+    - [40, 50]
+    - [50, 60]
+  report_breakeven: true
+  feasibility_mask: true             # A4/M6 — ON by default: shortable only if a
+                                     # borrow/perp venue existed in week t
+  funding: true                      # perpetual funding costs for the hedge variant
+  hedge:
+    enabled: false                   # toggled ON for the BTC/ETH beta-hedge variant
+    instruments: [BTC_PERP, ETH_PERP]
+
+evaluation:
+  newey_west_lags: auto
+  annualization_factor: 52
+  factor_models: [ccapm, ltw]
+  reconstruct_factors: true
+  factor_correlation_gate: 0.95
+  decay_split_date: 2022-05-31       # pre/post replication-window comparison
+  rolling_sharpe_window_weeks: 52
