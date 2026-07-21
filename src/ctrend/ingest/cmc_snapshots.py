@@ -129,6 +129,13 @@ def harvest(start: date, end: date, out: Path, *, delay: float, force: bool = Fa
             continue
         month_df = pd.concat(frames, ignore_index=True)
         month_df["date"] = pd.to_datetime(month_df["date"])
+        # Supply and quote fields must be float64: some coins report supplies far
+        # beyond int64 (meme tokens with quadrillion-scale supply), which pandas
+        # keeps as Python ints and pyarrow then rejects with "PyLong is too large".
+        for col in ("circulatingSupply", "totalSupply", "maxSupply",
+                    "price", "marketCap", "volume24h"):
+            month_df[col] = pd.to_numeric(month_df[col], errors="coerce").astype("float64")
+        month_df["cmcRank"] = pd.to_numeric(month_df["cmcRank"], errors="coerce").astype("float64")
         month_df.to_parquet(path, index=False, compression="zstd")
         total_rows += len(month_df)
         log.info("%04d-%02d  days=%d  rows=%-8d coins=%-5d  %.0fs  (cum %.2fM)",

@@ -47,7 +47,11 @@ from fixtures.synthetic import build_panel
 
 N_WEEKS = 130
 T_SPLIT = Week(100)  # 30 weeks of future for the noise to live in
-FIRST_CTREND = 54  # DECISIONS.md: pool of combining targets is empty until t = 53
+# GT-8: under `smoothing: window_mean` the in-sample block at signal week w is
+# the M weeks ending at w, so the first emission is target 53 -- matching the
+# authors (first forecast index 53 -> 201416 + 52 = 201516) and SPEC 6 M3's
+# "week 53 onward". The old 54 was an artifact of the trailing-mean pool.
+FIRST_CTREND = 53
 
 
 # --------------------------------------------------------------------------- #

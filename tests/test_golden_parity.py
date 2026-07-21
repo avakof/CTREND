@@ -41,9 +41,51 @@ def golden_ds(tmp_path_factory, replication_cfg):
     return ds, Z, R
 
 
+def golden_cfg(cfg):
+    """The golden's algorithm, expressed as sensitivity flags.
+
+    GT-8/GT-9/GT-10 established that the §5 golden encodes an algorithm the
+    authors did **not** run: per-week trailing means of (alpha, beta) rather than
+    a single window mean, a fixed 25-point lambda grid rather than a data-dependent
+    one, `k = nonzero + 1` in the AICc, and no standardization of the design.
+
+    The golden stays green -- it is self-contained numpy and never executes
+    ``src/`` -- but it can no longer describe the production default. Rather than
+    delete the parity check (which would leave the production core with no
+    integration test at all), we run production **under the golden's own flags**.
+    That keeps it as a genuine numerical regression test of the core while the
+    default follows ground truth. Deleting it would violate I3; weakening its
+    assertions would too. They are unchanged below.
+    """
+    from dataclasses import replace
+
+    en = cfg.signal.elasticnet
+    en = replace(
+        en,
+        lambda_grid=replace(en.lambda_grid, mode="fixed", n=25, log_low=-4.0, log_high=0.0),
+        aicc_k="nonzero_plus_one",
+        standardize=False,
+    )
+    return replace(cfg, signal=replace(cfg.signal, elasticnet=en, smoothing="trailing_mean"))
+
+
+def test_production_default_diverges_from_the_golden(golden_ds, replication_cfg):
+    """The divergence is intentional and must be visible, not silent.
+
+    If this test ever starts passing with the golden's selection, production has
+    drifted back to the superseded algorithm.
+    """
+    ds, _, _ = golden_ds
+    cw = ctrend_at(ds, replication_cfg, 88)
+    assert set(cw.selected.tolist()) != set(GOLDEN.PLANTED), (
+        "production reproduced the golden under GT-8/GT-9 defaults — the "
+        "ground-truth corrections have been reverted somewhere"
+    )
+
+
 def test_production_core_reproduces_the_golden(golden_ds, replication_cfg):
     ds, Z, R = golden_ds
-    cw = ctrend_at(ds, replication_cfg, 88)
+    cw = ctrend_at(ds, golden_cfg(replication_cfg), 88)
 
     assert cw.n_pooled == 9000, f"pooled n drifted: {cw.n_pooled}"
     assert cw.target_week == 89
@@ -64,7 +106,9 @@ def test_production_core_reproduces_the_golden(golden_ds, replication_cfg):
 
 def test_pooled_design_shape_matches_the_golden(golden_ds, replication_cfg):
     ds, Z, R = golden_ds
-    state = WalkForwardState(GOLDEN.J, replication_cfg.signal)
+    # The golden's pool is the superseded expanding/trailing_mean regime (GT-8),
+    # so this shape check runs under the golden's own flags.
+    state = WalkForwardState(GOLDEN.J, golden_cfg(replication_cfg).signal)
     for week in range(0, 89):
         state.ingest(ds.asof(week, lookback=1))
     X, y = state.pooled(88)

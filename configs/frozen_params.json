@@ -1,0 +1,34 @@
+{
+  "tuning_window": {
+    "start": 202223,
+    "end": 202352
+  },
+  "eval_window": {
+    "start": 202401,
+    "end": 202629
+  },
+  "selection_criterion": "net_sharpe_55bps_on_tuning_window",
+  "n_grid_points_searched": 15,
+  "params": {
+    "vol_lookback": 52,
+    "turnover_lever": [
+      "buffer",
+      0.1
+    ],
+    "stability_n": 3,
+    "beta_window": 52,
+    "vol_target": 0.3476589528030646
+  },
+  "mde_paired_pct_wk": {
+    "C1 shortable+cap": 1.769,
+    "C2 vol-target": 0.395,
+    "C3 turnover": 0.474,
+    "C4 beta-hedge": 0.042,
+    "C5 stability": 0.489,
+    "C6 capacity": 1.647,
+    "C7 C1+C6": 1.552,
+    "C8 stack": 1.539,
+    "C9 stack+hedge": 1.581
+  },
+  "integrity_sha256": "6ee6c73db6dc501b55cdc2c17c1efc4e411d55509ad9743496ba0dca63d3d36e"
+}

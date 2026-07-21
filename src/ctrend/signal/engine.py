@@ -19,8 +19,10 @@ is taken literally: the forecast for *t+1* uses the signal at *t* and pairs
 as a forecast for *t+1* would be an off-by-one that reads as look-ahead the
 moment M4 accounts for it. The choice also lands the first emission exactly where
 SPEC §6 M3 says it should: with M = 52 the earliest full smoothing window closes
-at *t* = 52, and the first ENet-combined CTREND is for week 54 (the pool of
-combining targets is empty until *t* = 53).
+at *t* = 52. Under GT-8 ``smoothing: window_mean`` the in-sample block is the M
+weeks ending at the signal week, so the first ENet-combined CTREND is for week
+53 -- exactly where SPEC §6 M3 says it should be, and where the authors' own
+first forecast lands (201416 + 52 = 201516).
 """
 
 from __future__ import annotations
@@ -55,6 +57,13 @@ class CtrendWeek:
     aicc: float
     n_pooled: int
     truncation: TruncationBounds
+    #: U5 selection stability. `values_by_level[:, i]` is CTREND under the rule
+    #: "an indicator counts only if theta>0 in ALL of the last levels[i] windows".
+    #: levels[0] is always 1, so `values` and column 0 coincide and every existing
+    #: caller and pinned test is unaffected.
+    levels: tuple[int, ...] = (1,)
+    values_by_level: np.ndarray | None = None
+    n_selected_by_level: tuple[int, ...] = ()
 
     @property
     def index(self) -> pd.Index:
@@ -69,11 +78,20 @@ class CtrendWeek:
         return self.selected.size == 0
 
 
-def run(ds: Dataset, cfg, *, through: Week | None = None) -> Iterator[CtrendWeek]:
-    """Yield one :class:`CtrendWeek` per week for which CTREND is defined."""
+def run(ds: Dataset, cfg, *, through: Week | None = None,
+        stability_levels: tuple[int, ...] = (1,)) -> Iterator[CtrendWeek]:
+    """Yield one :class:`CtrendWeek` per week for which CTREND is defined.
+
+    `stability_levels` (U5) evaluates several persistence rules in ONE pass: an
+    indicator enters the combined forecast only if theta_j > 0 in all of the last N
+    fitted windows. Computing every N together avoids one full walk-forward per N,
+    which is the single most expensive stage. Level 1 is the unmodified rule.
+    """
     sig = cfg.signal
     state = WalkForwardState(J_INDICATORS, sig)
     last = int(through) if through is not None else int(ds.calendar.last_week)
+    levels = tuple(sorted(set((1,) + tuple(stability_levels))))
+    history: list[np.ndarray] = []   # boolean theta>0 masks, most recent last
 
     for week in ds.calendar.iter_weeks():
         if int(week) > last:
@@ -97,13 +115,32 @@ def run(ds: Dataset, cfg, *, through: Week | None = None) -> Iterator[CtrendWeek
         z = np.ascontiguousarray(cur.signals[mask])
         coins = np.ascontiguousarray(win.coins[mask])
 
-        sel = np.where(fit.theta > 0)[0]  # STRICTLY positive: zeros and negatives dropped
+        pos = fit.theta > 0
+        history.append(pos)
+        if len(history) > max(levels):
+            history.pop(0)
+
+        sel = np.where(pos)[0]  # STRICTLY positive: zeros and negatives dropped
         if sel.size == 0:
             # empty_selection: nan — the golden's mean over an empty axis is NaN
             # and is left unguarded there; here it is explicit and logged.
             values = np.full(len(coins), np.nan)
         else:
             values = (ab + z * bb)[:, sel].mean(1)
+
+        # U5: an indicator survives level N only if positive in the last N windows.
+        forecasts = ab + z * bb
+        by_level = np.full((len(coins), len(levels)), np.nan)
+        n_by_level = []
+        for i, n in enumerate(levels):
+            if len(history) < n:
+                n_by_level.append(0)
+                continue
+            stable = np.logical_and.reduce(history[-n:])
+            idx = np.where(stable)[0]
+            n_by_level.append(int(idx.size))
+            if idx.size:
+                by_level[:, i] = forecasts[:, idx].mean(1)
 
         yield CtrendWeek(
             target_week=target,
@@ -116,6 +153,9 @@ def run(ds: Dataset, cfg, *, through: Week | None = None) -> Iterator[CtrendWeek
             aicc=fit.aicc,
             n_pooled=fit.n_pooled,
             truncation=win.truncation,
+            levels=levels,
+            values_by_level=by_level,
+            n_selected_by_level=tuple(n_by_level),
         )
 
 

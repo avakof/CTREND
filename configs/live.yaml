@@ -14,31 +14,49 @@ universe:
   require: [close, dollar_volume, market_cap]
   include_delisted: true
   delisting_policy: last_price       # A4
+  exclude_stablecoins: true          # GT-3b
+  min_price_usd: 0.0
 
 returns:
   truncate_lower_pct: 0.005
   truncate_upper_pct: 0.995
-  truncation_mode: expanding         # A5 — no full-sample look-ahead in live mode
-  truncation_scope: pooled           # pooled over all coin-weeks (see DECISIONS)
+  # GT-2: per-day cross-sectional truncation is ALREADY look-ahead-free, so the
+  # replication/live split on this axis is moot. `expanding` is retained only as
+  # a sensitivity option.
+  truncation_mode: daily_cross_sectional
+  truncation_scope: per_day
+  first_obs_quirk: corrected         # live mode does not reproduce the MATLAB NaN quirk
   risk_free: 0.0
 
 indicators:
-  macd_denominator: fast             # A1
-  chaikin_window: 20                 # A2
+  macd_denominator: slow             # GT-4
+  chaikin_window: 21                 # GT-5
+  chaikin_min_obs: 10                # GT-5
+  cci_window: 20
+  cci_min_obs: 10
+  stoch_scale: unit                  # GT-6
+  sma_warmup: expanding              # GT-7
   rank_map_range: [-0.5, 0.5]
+  resample: liu_year_blocks          # GT-1
+  liu_resample_lastfix: corrected    # A6 — always corrected in live mode (I1)
 
 signal:
   estimation_window_weeks: 52
   wls_weights: market_cap
   elasticnet:
     l1_ratio: 0.5
-    lambda_grid: {n: 25, log_low: -4, log_high: 0}
+    lambda_grid: {mode: data_dependent, n: 200, ratio: 1.0e-4}   # GT-9
+    standardize: true
     selection: aicc                  # I2
+    aicc_k: nonzero                  # GT-10
     max_iter: 20000
+  smoothing: window_mean             # GT-8
+  demean: returns_only               # GT-11
+  val_fraction: 0.0
   forecast_selection: theta_positive # keep indicators with theta_j > 0
   combine: equal_weight
   # --- §4.3 residual ambiguities, resolved in DECISIONS.md (I2) ---
-  training_window: expanding         # pool combining targets [53, t]
+  training_window: rolling:52        # GT-8
   min_pool_weeks: 1                  # => first ENet-combined CTREND is week 54
   wls_weight_date: signal            # mcap at t-1, the signal date (conservative, I1)
   wls_weights_normalize: true        # w = mcap / mcap.sum(); beta scale-free, alpha is not
@@ -54,8 +72,11 @@ portfolio:
   weighting: value_weighted
   holding_period_weeks: 1
   diagnostic_holding_periods: [2, 3, 4, 5, 6]
-  rebalance_weekday: sunday          # A3
+  rebalance_weekday: liu_year_blocks # GT-1
   implementation_lag_days: 1         # ON — trade at t+1, not the signal close
+  min_cross_section: 25
+  min_assets_per_portfolio: 5
+  quantile_method: matlab_exact
   long_only: true                    # ON — short leg largely untradable (see §10)
   liquidity_screen: top_half_dollar_volume
 
@@ -73,8 +94,11 @@ costs:
     instruments: [BTC_PERP, ETH_PERP]
 
 evaluation:
+  tstat_method: ols                  # GT-12 — matches the paper; HAC as robustness
   newey_west_lags: auto
+  breakeven_tc_turnover: raw_abs
   annualization_factor: 52
+  validate_against_shipped_factor: true
   factor_models: [ccapm, ltw]
   reconstruct_factors: true
   factor_correlation_gate: 0.95

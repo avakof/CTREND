@@ -12,32 +12,58 @@ universe:
   drop_mcap_above_btc: true          # SPEC §4.1
   require: [close, dollar_volume, market_cap]
   include_delisted: true             # point-in-time universe must retain dead coins
-  delisting_policy: last_price       # A4 — close the position at the last observed price
+  delisting_policy: last_price       # A4 — confirmed: b01ReadData.m:52, no delisting adj.
+  exclude_stablecoins: true          # GT-3b — baseline filter in b05:62-74, SPEC omitted it
+  min_price_usd: 0.0                 # dMinPrc, b05:20
 
 returns:
   truncate_lower_pct: 0.005          # 0.5%
   truncate_upper_pct: 0.995          # 99.5%
-  truncation_mode: full_sample       # A5 — paper uses full-sample percentiles
-  truncation_scope: pooled           # pooled over all coin-weeks (see DECISIONS)
-  risk_free: 0.0                     # 1-week rf; ~0 over the replication window
+  # GT-2: truncation is DAILY and per-day cross-sectional, and DROPS to NaN
+  # (b02:66-74; fTruncate.m:27,30). A5's "full-sample look-ahead" premise was
+  # mistaken -- the authors' truncation contains no look-ahead at all.
+  truncation_mode: daily_cross_sectional
+  truncation_scope: per_day          # supersedes `pooled` (moot once per-day)
+  first_obs_quirk: faithful          # GT-2b — MATLAB NaN~=NaN drops every coin's first obs
+  risk_free: 0.0                     # GT-3 — vRiskFree written but never read; returns raw
 
 indicators:
-  macd_denominator: fast             # A1 — paper text: percentage of the fast EMA
-  chaikin_window: 20                 # A2
+  macd_denominator: slow             # GT-4 — b02:199 calls PPO; ti.m:474,510. Was `fast`
+  chaikin_window: 21                 # GT-5 — b02:221 fChaikinMoneyFlow(21, 10). Was 20
+  chaikin_min_obs: 10                # GT-5
+  cci_window: 20
+  cci_min_obs: 10                    # b02:184
+  stoch_scale: unit                  # GT-6 — stochK/D/RSI are [0,1], not [0,100]
+  sma_warmup: expanding              # GT-7 — expanding omitnan window; sma_200d non-NaN day 1
   rank_map_range: [-0.5, 0.5]        # cross-sectional rank map, SPEC §4.2
+  # GT-1 / A6 — weekly resampling
+  resample: liu_year_blocks          # fixed 7d blocks from Jan 1; 52 wk/yr; wk52 = 8-9 days
+  liu_resample_lastfix: corrected    # A6 — authors' 'last' fallback reaches into the FUTURE;
+                                     # `faithful` reproduces the bug and FAILS I1 by design
 
 signal:
   estimation_window_weeks: 52        # M
   wls_weights: market_cap
   elasticnet:
     l1_ratio: 0.5
-    lambda_grid: {n: 25, log_low: -4, log_high: 0}   # 25 pts, 1e-4 .. 1
+    # GT-9: 200 DATA-DEPENDENT lambdas, lambda_max -> 1e-4*lambda_max, recomputed
+    # per rolling window (fEstRegPanelRegression.m:50,82-94). Was 25 fixed pts on
+    # [1e-4, 1]; the two grids select different indicator sets ~half the time.
+    lambda_grid: {mode: data_dependent, n: 200, ratio: 1.0e-4}
+    standardize: true                # MATLAB lasso Standardize=true; rescale coefs back
     selection: aicc                  # I2 — cross-validation is PROHIBITED here
+    aicc_k: nonzero                  # GT-10 — k = nonzero coefs, NO +1
     max_iter: 20000
-  forecast_selection: theta_positive # keep indicators with theta_j > 0
+  smoothing: window_mean             # GT-8 — ONE (alpha,beta) pair = mean of 52 weekly
+                                     # gammas, applied uniformly. Was `trailing_mean`
+  demean: returns_only               # GT-11 — forecasts are NOT demeaned; global intercept,
+                                     # no time fixed effects (b05:133-137)
+  val_fraction: 0.0                  # dFracVal=0: train/test indices coincide (documented)
+  forecast_selection: theta_positive # keep indicators with theta_j > 0 (strict)
   combine: equal_weight
   # --- §4.3 residual ambiguities, resolved in DECISIONS.md (I2) ---
-  training_window: expanding         # pool combining targets [53, t]
+  training_window: rolling:52        # GT-8 — lRoll=true, fixed 52wk window [t-52, t-1].
+                                     # Supersedes `expanding`
   min_pool_weeks: 1                  # => first ENet-combined CTREND is week 54
   wls_weight_date: signal            # mcap at t-1, the signal date (conservative, I1)
   wls_weights_normalize: true        # w = mcap / mcap.sum(); beta scale-free, alpha is not
@@ -53,8 +79,12 @@ portfolio:
   weighting: value_weighted
   holding_period_weeks: 1
   diagnostic_holding_periods: [2, 3, 4, 5, 6]
-  rebalance_weekday: sunday          # A3 — weeks end Sunday close, hold Mon–Sun
+  rebalance_weekday: liu_year_blocks # GT-1 — there is NO weekday; see indicators.resample.
+                                     # `sunday` retained as the M5 sensitivity axis
   implementation_lag_days: 0         # paper-faithful: no lag
+  min_cross_section: 25              # iMinNumCS — week voided below this (fSingleSortMulti)
+  min_assets_per_portfolio: 5        # iMinNumAssets
+  quantile_method: matlab_exact      # (i-0.5)/n plotting positions, NOT numpy default
   long_only: false
   liquidity_screen: none
 
@@ -68,8 +98,13 @@ costs:
   funding: false
 
 evaluation:
-  newey_west_lags: auto
+  # GT-12: the authors use plain OLS/iid t-stats (ttest, regstats). The paper's
+  # alpha^LTW t = 4.22 is an OLS t. HAC appears only in a bypassed FM path.
+  tstat_method: ols                  # `newey_west` reported alongside as robustness
+  newey_west_lags: auto              # used only when tstat_method: newey_west
+  breakeven_tc_turnover: raw_abs     # NOT the GKX figure: unhalved, no drift adjustment
   annualization_factor: 52
+  validate_against_shipped_factor: true   # Results/CTREND/CTREND.xlsx, 371 wks
   factor_models: [ccapm, ltw]
   reconstruct_factors: true
   factor_correlation_gate: 0.95      # vs shipped Dataverse series, if present
