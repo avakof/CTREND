@@ -17,7 +17,7 @@
     ],
     "stability_n": 3,
     "beta_window": 52,
-    "vol_target": 0.3476589528030646
+    "vol_target": 0.3476589528030645
   },
   "mde_paired_pct_wk": {
     "C1 shortable+cap": 1.769,
@@ -30,5 +30,5 @@
     "C8 stack": 1.539,
     "C9 stack+hedge": 1.581
   },
-  "integrity_sha256": "6ee6c73db6dc501b55cdc2c17c1efc4e411d55509ad9743496ba0dca63d3d36e"
+  "integrity_sha256": "d2bfa8363dd1086f042d51a705a4b9f4f1b77ecae4f0e4aba8987d612a8ac922"
 }

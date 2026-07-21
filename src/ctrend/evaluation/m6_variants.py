@@ -51,11 +51,19 @@ def load(ctrend: str, weekly: str, mask: str | None) -> pd.DataFrame:
         FROM read_parquet('{ctrend}') c
         JOIN p ON p.coin_id = c.coin_id AND p.week_id = c.yyyyww
         WHERE p.weekly_return IS NOT NULL AND c.ctrend IS NOT NULL AND p.mcap_lag > 0
+        ORDER BY c.yyyyww, c.coin_id
     """).df()
     if mask and Path(mask).exists():
-        m = pd.read_parquet(mask)[["coin_id", "onboard_week"]]
+        m = pd.read_parquet(mask)[["coin_id", "onboard_week", "offboard_week", "status"]]
+        # PENDING_TRADING contracts carry an onboardDate but have never traded, so a
+        # half-line `onboard_week <= t` counts them as shortable. The predicate
+        # feasibility_mask.py specifies is the INTERVAL, and the status filter is what
+        # actually binds here (pending rows carry offboard_week = STILL_LIVE).
+        m = m[m["status"] != "PENDING_TRADING"]
         df = df.merge(m, on="coin_id", how="left")
-        df["shortable"] = df["onboard_week"].notna() & (df["onboard_week"] <= df["week"])
+        df["shortable"] = (df["onboard_week"].notna()
+                           & (df["onboard_week"] <= df["week"])
+                           & (df["week"] <= df["offboard_week"].fillna(np.inf)))
     else:
         df["shortable"] = True
     con.close()
@@ -82,14 +90,29 @@ def run_variants(df: pd.DataFrame) -> pd.DataFrame:
         rec["mkt"] = mkt
         rec["q1"], rec["q5"] = _vw(lo), _vw(hi)
         rec["A_hl"] = rec["q5"] - rec["q1"]
-        # Leg decomposition against the market: how much comes from each side.
-        rec["long_leg"] = rec["q5"] - mkt
+        # Leg decomposition. Two conventions, both reported, because they answer
+        # different questions and disagree sharply:
+        #   *_ex  — MARKET-RELATIVE. How much of the spread is each side's edge over
+        #           the market? Sums to A_hl because mkt cancels.
+        #   *_raw — RAW RETURN. What does each side actually earn? This is the one that
+        #           bears on tradability: an investor who cannot short holds q5 itself,
+        #           not q5 - mkt. Also sums to A_hl.
+        # Reporting only the market-relative pair invites reading it as the raw one:
+        # out of sample that shifts the market's own return off the long side and turns
+        # a 57/43 long/short split into 14/86.
+        rec["long_leg"] = rec["q5"] - mkt          # kept: name is load-bearing downstream
         rec["short_leg"] = mkt - rec["q1"]
+        rec["long_leg_raw"] = rec["q5"]
+        rec["short_leg_raw"] = -rec["q1"]
 
         # B: short only what a perpetual existed for.
         lo_s = lo[lo["shortable"]]
         rec["B_hl"] = (rec["q5"] - _vw(lo_s)) if len(lo_s) >= MIN_ASSETS else np.nan
+        # Two shortability shares. The headcount is a diagnostic; the WEIGHT share is
+        # the one that bears on tradability, since every return here is value-weighted
+        # on lagged market cap. They differ by 4-12x and support opposite conclusions.
         rec["short_frac"] = len(lo_s) / len(lo)
+        rec["short_frac_w"] = float(lo_s["mcap"].sum() / lo["mcap"].sum())
 
         # C: long-only inside the top half by dollar volume.
         gl = g.dropna(subset=["dvol"])

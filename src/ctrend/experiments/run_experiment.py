@@ -125,6 +125,24 @@ def main() -> int:
     tbl = report_table(ev, baseline="C0 baseline", expected=set(configs))
     tbl["tune_mean_pct"] = [tune_ev[n].mean() * 100 for n in tbl["config"]]
     tbl["mde_pct"] = [frozen["mde_paired_pct_wk"].get(n, np.nan) for n in tbl["config"]]
+
+    # The frozen MDE is an EX-ANTE number: its sd comes from the tuning window, which
+    # was a far stronger regime, and it divides by sqrt(133) for every configuration
+    # even where the restricted universe leaves fewer weeks. Both facts make it a
+    # statement about what was pre-registered, not about this window's power — so the
+    # realized threshold is reported beside it rather than replacing it.
+    base_e = ev["C0 baseline"].dropna()
+    realized = {}
+    for name, s in ev.items():
+        if name == "C0 baseline":
+            continue
+        s = s.dropna()
+        common = base_e.index.intersection(s.index)
+        if len(common) < 20:
+            continue
+        sd = float((s.loc[common] - base_e.loc[common]).std(ddof=1))
+        realized[name] = round(100 * (2.576 + 0.842) * sd / np.sqrt(len(common)), 3)
+    tbl["mde_realized_pct"] = [realized.get(n, np.nan) for n in tbl["config"]]
     Path("reports").mkdir(exist_ok=True)
     tbl.to_csv("reports/upgrades_evaluation.csv", index=False)
 
@@ -139,8 +157,13 @@ def main() -> int:
     print("=" * 104)
     cols = ["config", "n", "mean_pct", "sharpe", "max_dd_pct", "hit_pct",
             "diff_mean_pct", "t_paired", "p_raw", "q_BH", "bonferroni_pass",
-            "sr_haircut_M31", "tune_mean_pct"]
+            "mde_pct", "mde_realized_pct", "tune_mean_pct"]
     print(tbl[cols].to_string(index=False, float_format=lambda v: f"{v:8.3f}"))
+    degenerate = tbl[tbl["t_paired"].isna() & (tbl["config"] != "C0 baseline")]
+    for r in degenerate.itertuples():
+        print(f"\nNOTE: {r.config} is a bit-exact no-op against the baseline "
+              f"(zero-variance difference) — no test performed, excluded from the "
+              f"{int(tbl['p_raw'].notna().sum())}-test family.")
     print(f"\nSPA p-value (best config genuinely beats baseline): {tbl.attrs['spa_p']:.3f}")
     return 0
 

@@ -6,33 +6,59 @@ Built from Binance USDT-M perpetual `onboardDate`, which states exactly when eac
 contract became tradable, and — for contracts no longer trading — the last available
 daily bar, which bounds when it stopped.
 
-**Why this matters more than it looks.** Only 160 perpetuals had onboarded by
-2022-05-31 and the first (BTC) only in **September 2019**, against a paper universe
-averaging 800-1,600 coins per week. For roughly the first four and a half years of the
-replication sample there was essentially no perpetual venue at all. That is the concrete
-content of the standing disclosure in SPEC §10 that the abnormal return "concentrates in
-a short leg that was largely untradable over the sample".
+**Why this matters more than it looks.** Only 127 perpetual contracts had onboarded by
+2022-05-31 (160 panel coins under the ticker join below) and the first (BTC) only in
+**September 2019**, against a paper universe averaging 800-1,600 coins per week. From
+2015-03-11 to 2019-11-25 — 4.71 years, most of the replication sample — no coin in the
+bottom quintile was shortable at all. Over the paper window the short book is 0.94% of
+names and 11.37% of market-cap weight. That is the concrete content of the standing
+disclosure in SPEC §10 that the abnormal return "concentrates in a short leg that was
+largely untradable over the sample".
 
-**A survivorship channel, and it flatters the strategy.** `exchangeInfo` returns only
-contracts that exist *today*. Every perpetual Binance has fully removed is silently
+That disclosure is about the *paper window*, and it does not carry to the extension.
+Out of sample the short book is 14.69% of names but **53.09%** of market-cap weight, and
+over the last 52 weeks 26.34% / **62.01%**. Every return here is value-weighted, so the
+weight share is the one that bears on tradability: out of sample the majority of the
+short book by dollar weight was shortable. Do not quote the headcount share as if it
+were the tradable fraction.
+
+**A survivorship channel, and it works against the strategy.** `exchangeInfo` returns
+only contracts that exist *today*. Every perpetual Binance has fully removed is silently
 absent, so a coin with a live perp from 2022-24 that was later delisted reads as
-never-shortable. The constructed universe is therefore biased toward names that survived
-as perpetuals — i.e. toward winners. Three mitigations, none of which fully closes it:
+never-shortable. This can only *shrink* the constructed shortable set. (An earlier
+version of this docstring called the resulting universe an "upper bound on the shortable
+universe" and described the channel as flattering the strategy. That is retracted: the
+direction was backwards. Survivorship in `exchangeInfo` biases measured shortability
+*down*, which understates how tradable the short leg was.) Three mitigations, none of
+which fully closes it:
 
   1. `--snapshot` pins the response to disk. An experiment must not depend on a mask
      that silently changes between runs.
   2. `status` is retained and `offboard_week` recorded for contracts no longer trading,
      so the predicate is the interval `onboard_week <= t <= offboard_week` rather than a
      half-line. This recovers the contracts still visible; it cannot recover those
-     removed entirely.
-  3. The residual bias is declared, not buried. Any result built on this mask is an
-     upper bound on the shortable universe.
+     removed entirely. `status` is written through rather than filtered here: the three
+     panel coins whose only contract is `PENDING_TRADING` (announced, never traded) are
+     dropped downstream in `evaluation/m6_variants.py`, which is what takes the matched
+     set from 817 coins to the 814 quoted in `reports/m6_decay_report.md` §3.
+  3. The residual bias is declared, not buried. On this channel any result built on the
+     mask is a *lower* bound on the shortable universe.
 
-**Also deliberately conservative in the other direction.** Perpetuals are not the only
+**Conservative in the same direction, for a second reason.** Perpetuals are not the only
 way to short — margin borrow and OTC existed for some names — but historical borrow
-availability is not publicly reconstructible whereas perp onboarding is exact. So the
-mask is simultaneously a *lower* bound on shortability overall. Both directions hold at
-once, and both belong in any report that uses it.
+availability is not publicly reconstructible whereas perp onboard dates are exact. This
+too biases the mask *down*.
+
+**The one channel that biases up: bare ticker matching.** Shortability is assigned by
+`upper(perp.base) = panel.sym` — a ticker string join, with no market-cap or identity
+check. 145 perp tickers are shared by ~342 panel coins, so up to ~197 coins are marked
+shortable purely by ticker collision with a larger namesake. Deduplicating to the
+largest coin per ticker cuts the out-of-sample headcount share from 14.7% to 13.6%.
+
+So the mask is bounded in both directions, but not symmetrically: two mechanisms
+(`exchangeInfo` survivorship, non-perp venues) push it down and one (ticker collision)
+pushes it up. It is an estimate with error bars on both sides — **it is not exact**, and
+no report may describe it as exact. Both directions belong in any report that uses it.
 """
 from __future__ import annotations
 

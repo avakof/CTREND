@@ -48,6 +48,7 @@ def load_panel(ctrend: str, signal_col: str = "ctrend") -> pd.DataFrame:
         JOIN p ON p.coin_id = c.coin_id AND p.week_id = c.yyyyww
         WHERE p.weekly_return IS NOT NULL AND c."{signal_col}" IS NOT NULL
           AND p.mcap_lag > 0
+        ORDER BY c.yyyyww, c.coin_id
     """).df()
     con.close()
     return df
