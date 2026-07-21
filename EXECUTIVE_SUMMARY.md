@@ -4,8 +4,11 @@ Replication and out-of-sample extension of Fieberg, Liedtke, Poddig, Walker &
 Zaremba, *A Trend Factor for the Cross Section of Cryptocurrency Returns*,
 JFQA 60 (2025), 3116–3153.
 
-2026-07-19 · 137 tests green · full detail in `validation_report.md` and
+2026-07-19 · 177 tests green · full detail in `validation_report.md` and
 `reports/m6_decay_report.md`.
+
+Six candidate repairs were subsequently tested under pre-registration and none survives
+multiple-testing correction — see `reports/upgrades_evaluation.md`.
 
 ---
 
