@@ -1,6 +1,6 @@
 """CTREND — replication of Fieberg, Liedtke, Poddig, Walker & Zaremba (JFQA 2025).
 
-Package root. See SPEC.md for the authoritative specification and CLAUDE.md for
+Package root. See SPEC.md for the authoritative specification and DEVELOPMENT.md for
 the invariants (I1-I8) that the test-suite enforces.
 
 M0 ships two things only:
