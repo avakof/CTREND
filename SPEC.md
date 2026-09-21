@@ -169,7 +169,7 @@ print(f"GOLDEN PASS | selected={sel.tolist()} | holdout IC={ic:.3f}")
 
 ## 6. MILESTONES & DEFINITION OF DONE
 
-- **M0 — Scaffold.** Tree, Makefile, dependencies, CLAUDE.md/SPEC.md/DECISIONS.md, smoke test, golden test installed and passing, plus `tests/test_no_lookahead.py`: build signals through week *t* on a fixture, replace all data after *t* with random noise, and assert CTREND at *t* is bit-identical. *DoD:* `make test` green.
+- **M0 — Scaffold.** Tree, Makefile, dependencies, DEVELOPMENT.md/SPEC.md/DECISIONS.md, smoke test, golden test installed and passing, plus `tests/test_no_lookahead.py`: build signals through week *t* on a fixture, replace all data after *t* with random noise, and assert CTREND at *t* is bit-identical. *DoD:* `make test` green.
 - **M1 — Data layer.** Track A download + inventory report; ingest to parquet/DuckDB; point-in-time universe with delisting registry; Track B connectors stubbed behind the same `Dataset` interface. *DoD:* yearly coin counts and mean/median market cap and volume within ±2% of the paper's Table 1; dead coins demonstrably present. **CP-1: present the inventory and stop.**
 - **M2 — Indicator engine.** All 28 signals; property tests; spot-check three indicators against an independent implementation (the `ta` package) within tolerance. *DoD:* property tests green; 28 columns for every eligible coin-week.
 - **M3 — Signal engine.** Production §4.3 behind `Dataset.asof`; CTREND produced for every week from week 53 onward. *DoD:* golden and look-ahead tests green.
