@@ -24,7 +24,7 @@ Ambiguity IDs A1–A5 are defined in SPEC.md §8.
 | 2026-07-18 | Coin present at t but absent at t−1 (interacts with A4 and with dead coins) | inner join: the coin must be eligible at both t−1 and t, else it is dropped from that week's regression. Compaction, not zero-weight padding — padding perturbs the `np.sum` reductions at ~1e-15 and would silently break bit-identity. | `signal.nan_policy: inner_join` |
 | 2026-07-18 | Empty selection (no theta_j > 0): the golden's `.mean(1)` over an empty axis yields NaN, unguarded | NaN, explicit; the week is dropped downstream and logged | `signal.empty_selection: nan` |
 | 2026-07-18 | A4 `delisting_policy: last_price` was logged above but absent from both config files — an I2 violation on disk | added to `configs/replication.yaml` and `configs/live.yaml` | `universe.delisting_policy: last_price` |
-| 2026-07-18 | CLAUDE.md I5 says "pandas/polars"; polars is neither installed nor a pyproject dependency | pandas + numpy + pyarrow + duckdb. I5's "polars" is aspirational, not a requirement. | n/a |
+| 2026-07-18 | DEVELOPMENT.md I5 says "pandas/polars"; polars is neither installed nor a pyproject dependency | pandas + numpy + pyarrow + duckdb. I5's "polars" is aspirational, not a requirement. | n/a |
 | 2026-07-18 | Bit-identity is an environment property as much as a code property; DECISIONS row 13 claimed a `.python-version` and `uv.lock` that did not exist on disk | both produced (`uv lock`, Python 3.12); `tests/conftest.py` additionally caps BLAS threads to 1 before numpy is imported, since thread count changes float reduction order | n/a |
 
 ---
